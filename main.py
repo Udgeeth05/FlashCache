@@ -2,6 +2,7 @@ import os
 import time
 from fastapi import FastAPI
 from cache.engine import CacheEngine
+from cache.singleflight import SingleFlight
 
 from fastapi.responses import Response
 from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
@@ -17,6 +18,8 @@ cache = CacheEngine(
     policy="LRU"
 )
 metrics = CacheMetrics()
+singleflight = SingleFlight()
+
 
 @app.get("/")
 def home():
@@ -43,55 +46,63 @@ def get_product(product_id: int):
             "data": cached_product
         }
 
-    # Cache miss → PostgreSQL
-    db = SessionLocal()
 
-    try:
 
-        product = db.query(Product).filter(
-            Product.id == product_id
-        ).first()
+    def load_from_database():
+        
+        db = SessionLocal()
 
-        if product is None:
+        try:
 
-            latency = time.perf_counter() - start_time
-            metrics.record_miss(latency)
+            product = db.query(Product).filter(
+                Product.id == product_id
+            ).first()
 
-            return {
-                "error": "Product not found"
+            if product is None:
+                return None
+
+            product_data = {
+                "id": product.id,
+                "name": product.name,
+                "price": product.price,
+                "category": product.category
             }
 
-        product_data = {
-            "id": product.id,
-            "name": product.name,
-            "price": product.price,
-            "category": product.category
-        }
+            cache.put(
+                str(product_id),
+                product_data,
+                ttl=60
+            )
 
-        # Store in cache
-        cache.put(
-            str(product_id),
-            product_data,
-            ttl=60
-        )
+            return product_data
 
-        latency = time.perf_counter() - start_time
-        metrics.record_miss(latency)
+        finally:
+            db.close()
 
+    product_data = singleflight.do(
+        str(product_id),
+        load_from_database
+    )
+
+    latency = time.perf_counter() - start_time
+    metrics.record_miss(latency)
+
+    if product_data is None:
         return {
-            "source": "database",
-            "data": product_data
+            "error": "Product not found"
         }
 
-    finally:
-        db.close()
+    return {
+        "source": "database",
+        "data": product_data
+    }
 
 @app.get("/stats")
 def get_stats():
     return metrics.get_stats()
 
 @app.get("/metrics")
-def metrics():
+def metrics_endpoint():
 
     return Response(
         content=generate_latest(),

@@ -1,13 +1,11 @@
 import threading
 import time
-
 from cache.singleflight import SingleFlight
 
 
 singleflight = SingleFlight()
 
 database_calls = 0
-
 counter_lock = threading.Lock()
 
 
@@ -16,13 +14,9 @@ def database_query():
     global database_calls
 
     with counter_lock:
-
         database_calls += 1
 
-    print(
-        threading.current_thread().name,
-        "→ PostgreSQL"
-    )
+    print(threading.current_thread().name, "→ PostgreSQL")
 
     time.sleep(1)
 
@@ -31,16 +25,9 @@ def database_query():
 
 def request():
 
-    result = singleflight.do(
-        "iphone",
-        database_query
-    )
+    result = singleflight.do("iphone", database_query)
 
-    print(
-        threading.current_thread().name,
-        "→",
-        result
-    )
+    print(threading.current_thread().name, "→", result)
 
 
 threads = []
@@ -57,8 +44,10 @@ for i in range(10):
 
 start = time.perf_counter()
 
+
 for thread in threads:
     thread.start()
+
 
 for thread in threads:
     thread.join()
@@ -71,19 +60,6 @@ print()
 print("======================")
 print("SingleFlight Test")
 print("======================")
-
-print(
-    "Requests:",
-    len(threads)
-)
-
-print(
-    "Database calls:",
-    database_calls
-)
-
-print(
-    "Total time:",
-    round(elapsed, 2),
-    "seconds"
-)
+print("Requests:", len(threads))
+print("Database calls:", database_calls)
+print("Total time:", round(elapsed, 2), "seconds")
