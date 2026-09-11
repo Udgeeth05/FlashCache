@@ -1,0 +1,10 @@
+version: "3.8"
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: flashcache
+      POSTGRES_PASSWORD: flashcache123
+      POSTGRES_DB: flashcache_db
+    ports:
+      - "5432:5432"
