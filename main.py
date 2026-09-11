@@ -3,7 +3,7 @@ import time
 from fastapi import FastAPI
 from cache.engine import CacheEngine
 from cache.singleflight import SingleFlight
-
+from cache.circuit_breaker import CircuitBreaker
 from fastapi.responses import Response
 from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
 
@@ -17,8 +17,15 @@ cache = CacheEngine(
     capacity=100,
     policy="LRU"
 )
+
 metrics = CacheMetrics()
+
 singleflight = SingleFlight()
+
+circuit_breaker = CircuitBreaker(
+    failure_threshold=3,
+    recovery_timeout=10
+)
 
 
 @app.get("/")
@@ -46,10 +53,14 @@ def get_product(product_id: int):
             "data": cached_product
         }
 
-
+    # Check circuit breaker before accessing database
+    if not circuit_breaker.allow_request():
+        return {
+            "error": "Database temporarily unavailable"
+        }
 
     def load_from_database():
-        
+
         db = SessionLocal()
 
         try:
@@ -79,10 +90,22 @@ def get_product(product_id: int):
         finally:
             db.close()
 
-    product_data = singleflight.do(
-        str(product_id),
-        load_from_database
-    )
+    try:
+
+        product_data = singleflight.do(
+            str(product_id),
+            load_from_database
+        )
+
+        circuit_breaker.record_success()
+
+    except Exception:
+
+        circuit_breaker.record_failure()
+
+        return {
+            "error": "Database temporarily unavailable"
+        }
 
     latency = time.perf_counter() - start_time
     metrics.record_miss(latency)
@@ -97,9 +120,11 @@ def get_product(product_id: int):
         "data": product_data
     }
 
+
 @app.get("/stats")
 def get_stats():
     return metrics.get_stats()
+
 
 @app.get("/metrics")
 def metrics_endpoint():
