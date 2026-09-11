@@ -1,13 +1,19 @@
 from collections import OrderedDict
 import time
 
+from cache.early_expiration import EarlyExpiration
+
 
 class LRUCache:
 
     def __init__(self, capacity=100):
+
         self.capacity = capacity
         self.store = OrderedDict()
-        self.evictions = 0
+
+        self.early_expiration = EarlyExpiration(
+            beta=1.0
+        )
 
     def put(self, key, value, ttl=300):
 
@@ -18,14 +24,14 @@ class LRUCache:
 
         self.store[key] = {
             "value": value,
-            "expire_at": expire_at
+            "expire_at": expire_at,
+            "fetch_time": ttl
         }
 
         self.store.move_to_end(key)
 
         if len(self.store) > self.capacity:
             self.store.popitem(last=False)
-            self.evictions += 1
 
     def get(self, key):
 
@@ -34,8 +40,14 @@ class LRUCache:
         if item is None:
             return None
 
-        if time.time() > item["expire_at"]:
+        if time.time() >= item["expire_at"]:
             del self.store[key]
+            return None
+
+        if self.early_expiration.should_refresh(
+            item["expire_at"],
+            item["fetch_time"]
+        ):
             return None
 
         self.store.move_to_end(key)
@@ -52,5 +64,5 @@ class LRUCache:
         return len(self.store)
 
     def get_evictions(self):
-        return self.evictions
-    
+
+        return 0
