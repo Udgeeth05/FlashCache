@@ -4,6 +4,7 @@ from fastapi import FastAPI
 from cache.engine import CacheEngine
 from cache.singleflight import SingleFlight
 from cache.circuit_breaker import CircuitBreaker
+from cache.cache_warmer import CacheWarmer
 from fastapi.responses import Response
 from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
 
@@ -27,6 +28,8 @@ circuit_breaker = CircuitBreaker(
     recovery_timeout=10
 )
 
+cache_warmer = CacheWarmer(cache)
+
 
 @app.get("/")
 def home():
@@ -40,7 +43,6 @@ def get_product(product_id: int):
 
     start_time = time.perf_counter()
 
-    # Check cache
     cached_product = cache.get(str(product_id))
 
     if cached_product is not None:
@@ -53,7 +55,6 @@ def get_product(product_id: int):
             "data": cached_product
         }
 
-    # Check circuit breaker before accessing database
     if not circuit_breaker.allow_request():
         return {
             "error": "Database temporarily unavailable"
@@ -119,6 +120,58 @@ def get_product(product_id: int):
         "source": "database",
         "data": product_data
     }
+
+
+@app.post("/warm")
+def warm_cache():
+
+    if not circuit_breaker.allow_request():
+        return {
+            "error": "Database temporarily unavailable"
+        }
+
+    def load_product(key):
+
+        db = SessionLocal()
+
+        try:
+
+            product = db.query(Product).filter(
+                Product.id == int(key)
+            ).first()
+
+            if product is None:
+                return None
+
+            return {
+                "id": product.id,
+                "name": product.name,
+                "price": product.price,
+                "category": product.category
+            }
+
+        finally:
+            db.close()
+
+    try:
+
+        result = cache_warmer.warm(
+            keys=["1", "2", "3"],
+            loader=load_product,
+            ttl=60
+        )
+
+        circuit_breaker.record_success()
+
+        return result
+
+    except Exception:
+
+        circuit_breaker.record_failure()
+
+        return {
+            "error": "Cache warming failed"
+        }
 
 
 @app.get("/stats")
