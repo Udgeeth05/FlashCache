@@ -1,16 +1,22 @@
 import os
 import time
-from fastapi import FastAPI
+
+from fastapi import FastAPI, Header, HTTPException, Request
+from fastapi.responses import Response
+from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
+
 from cache.engine import CacheEngine
 from cache.singleflight import SingleFlight
 from cache.circuit_breaker import CircuitBreaker
 from cache.cache_warmer import CacheWarmer
-from fastapi.responses import Response
-from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
+from cache.predictive_warmer import PredictiveWarmer
+from cache.security import SecurityManager
+from cache.rate_limiter import TokenBucket
 
 from database import SessionLocal
 from models import Product
 from metrics import CacheMetrics
+
 
 app = FastAPI()
 
@@ -30,6 +36,56 @@ circuit_breaker = CircuitBreaker(
 
 cache_warmer = CacheWarmer(cache)
 
+predictive_warmer = PredictiveWarmer(
+    max_keys=10
+)
+
+security = SecurityManager()
+
+rate_limiter = TokenBucket(
+    capacity=10,
+    refill_rate=5
+)
+
+
+def require_scope(
+    authorization: str | None,
+    required_scope: str
+):
+    if not authorization:
+        raise HTTPException(
+            status_code=401,
+            detail="Missing API token"
+        )
+
+    if not authorization.startswith("Bearer "):
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid authorization format"
+        )
+
+    token = authorization[7:]
+
+    if not security.has_scope(
+        token,
+        required_scope
+    ):
+        raise HTTPException(
+            status_code=403,
+            detail="Insufficient permissions"
+        )
+
+
+def check_rate_limit(request: Request):
+
+    client_id = request.client.host
+
+    if not rate_limiter.allow(client_id):
+        raise HTTPException(
+            status_code=429,
+            detail="Rate limit exceeded"
+        )
+
 
 @app.get("/")
 def home():
@@ -39,11 +95,26 @@ def home():
 
 
 @app.get("/product/{product_id}")
-def get_product(product_id: int):
+def get_product(
+    product_id: int,
+    request: Request,
+    authorization: str | None = Header(default=None)
+):
+
+    check_rate_limit(request)
+
+    require_scope(
+        authorization,
+        "read"
+    )
 
     start_time = time.perf_counter()
 
-    cached_product = cache.get(str(product_id))
+    key = str(product_id)
+
+    predictive_warmer.record_access(key)
+
+    cached_product = cache.get(key)
 
     if cached_product is not None:
 
@@ -56,9 +127,10 @@ def get_product(product_id: int):
         }
 
     if not circuit_breaker.allow_request():
-        return {
-            "error": "Database temporarily unavailable"
-        }
+        raise HTTPException(
+            status_code=503,
+            detail="Database temporarily unavailable"
+        )
 
     def load_from_database():
 
@@ -81,7 +153,7 @@ def get_product(product_id: int):
             }
 
             cache.put(
-                str(product_id),
+                key,
                 product_data,
                 ttl=60
             )
@@ -94,7 +166,7 @@ def get_product(product_id: int):
     try:
 
         product_data = singleflight.do(
-            str(product_id),
+            key,
             load_from_database
         )
 
@@ -104,17 +176,20 @@ def get_product(product_id: int):
 
         circuit_breaker.record_failure()
 
-        return {
-            "error": "Database temporarily unavailable"
-        }
+        raise HTTPException(
+            status_code=503,
+            detail="Database temporarily unavailable"
+        )
 
     latency = time.perf_counter() - start_time
     metrics.record_miss(latency)
 
     if product_data is None:
-        return {
-            "error": "Product not found"
-        }
+
+        raise HTTPException(
+            status_code=404,
+            detail="Product not found"
+        )
 
     return {
         "source": "database",
@@ -123,12 +198,25 @@ def get_product(product_id: int):
 
 
 @app.post("/warm")
-def warm_cache():
+def warm_cache(
+    request: Request,
+    authorization: str | None = Header(default=None)
+):
+
+    check_rate_limit(request)
+
+    require_scope(
+        authorization,
+        "write"
+    )
 
     if not circuit_breaker.allow_request():
-        return {
-            "error": "Database temporarily unavailable"
-        }
+        raise HTTPException(
+            status_code=503,
+            detail="Database temporarily unavailable"
+        )
+
+    hot_keys = predictive_warmer.get_hot_keys()
 
     def load_product(key):
 
@@ -156,26 +244,60 @@ def warm_cache():
     try:
 
         result = cache_warmer.warm(
-            keys=["1", "2", "3"],
+            keys=hot_keys,
             loader=load_product,
             ttl=60
         )
 
         circuit_breaker.record_success()
 
-        return result
+        return {
+            "predicted_keys": hot_keys,
+            "warming": result
+        }
 
     except Exception:
 
         circuit_breaker.record_failure()
 
-        return {
-            "error": "Cache warming failed"
-        }
+        raise HTTPException(
+            status_code=503,
+            detail="Cache warming failed"
+        )
+
+
+@app.get("/predict")
+def get_predictions(
+    request: Request,
+    authorization: str | None = Header(default=None)
+):
+
+    check_rate_limit(request)
+
+    require_scope(
+        authorization,
+        "read"
+    )
+
+    return {
+        "hot_keys": predictive_warmer.get_hot_keys(),
+        "access_counts": predictive_warmer.get_access_counts()
+    }
 
 
 @app.get("/stats")
-def get_stats():
+def get_stats(
+    request: Request,
+    authorization: str | None = Header(default=None)
+):
+
+    check_rate_limit(request)
+
+    require_scope(
+        authorization,
+        "read"
+    )
+
     return metrics.get_stats()
 
 
