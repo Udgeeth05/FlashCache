@@ -20,6 +20,7 @@ class CacheEngine:
         self.capacity = capacity
         self.policy = policy.upper()
         self.persistence = persistence
+
         self.recovering = False
 
         self.bloom_filter = BloomFilter(
@@ -84,6 +85,11 @@ class CacheEngine:
                     300
                 )
 
+                if key is None:
+                    continue
+
+                key = str(key)
+
                 if operation == "PUT":
 
                     if value is not None:
@@ -98,10 +104,8 @@ class CacheEngine:
                             ttl
                         )
 
-                        self.entry_sizes[
-                            str(key)
-                        ] = self._calculate_size(
-                            value
+                        self.entry_sizes[key] = (
+                            self._calculate_size(value)
                         )
 
                 elif operation == "DELETE":
@@ -111,7 +115,7 @@ class CacheEngine:
                     )
 
                     self.entry_sizes.pop(
-                        str(key),
+                        key,
                         None
                     )
 
@@ -119,10 +123,7 @@ class CacheEngine:
 
             self.recovering = False
 
-    def _calculate_size(
-        self,
-        value
-    ):
+    def _calculate_size(self, value):
 
         try:
 
@@ -130,9 +131,7 @@ class CacheEngine:
                 json.dumps(
                     value,
                     default=str
-                ).encode(
-                    "utf-8"
-                )
+                ).encode("utf-8")
             )
 
         except Exception:
@@ -142,6 +141,8 @@ class CacheEngine:
             )
 
     def get(self, key):
+
+        key = str(key)
 
         if not self.bloom_filter.might_contain(
             key
@@ -160,12 +161,12 @@ class CacheEngine:
         ttl=300
     ):
 
+        key = str(key)
+
         payload = json.dumps(
             value,
             default=str
-        ).encode(
-            "utf-8"
-        )
+        ).encode("utf-8")
 
         if len(payload) > 5 * 1024 * 1024:
 
@@ -176,8 +177,6 @@ class CacheEngine:
         self.bloom_filter.add(
             key
         )
-
-        key = str(key)
 
         self.entry_sizes[key] = len(
             payload
@@ -201,10 +200,7 @@ class CacheEngine:
                 ttl=ttl
             )
 
-    def delete(
-        self,
-        key
-    ):
+    def delete(self, key):
 
         key = str(key)
 
@@ -242,10 +238,7 @@ class CacheEngine:
 
             for key, item in self.cache.store.items():
 
-                if isinstance(
-                    item,
-                    dict
-                ):
+                if isinstance(item, dict):
 
                     data[key] = item
 

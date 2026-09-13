@@ -1,11 +1,23 @@
-from fastapi import APIRouter, Header, HTTPException, Request, Security
-from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from fastapi import (
+    APIRouter,
+    Header,
+    HTTPException,
+    Request,
+    Security
+)
+
+from fastapi.security import (
+    HTTPAuthorizationCredentials,
+    HTTPBearer
+)
+
 from pydantic import BaseModel, Field
 
 from cache.engine import CacheEngine
 from cache.persistence import CachePersistence
 from cache.security import SecurityManager
 from cache.rate_limiter import TokenBucket
+from cache.idle_eviction import IdleEvictionManager
 
 
 router = APIRouter(
@@ -49,6 +61,18 @@ class CacheValue(BaseModel):
         ge=1,
         le=86400
     )
+
+
+def delete_cached_key(key):
+
+    cache.delete(key)
+
+
+idle_eviction = IdleEvictionManager(
+    delete_callback=delete_cached_key,
+    idle_timeout=600,
+    check_interval=60
+)
 
 
 def require_token(
@@ -183,6 +207,10 @@ def put_cache(
             ttl=payload.ttl
         )
 
+        idle_eviction.track(
+            cache_key
+        )
+
     except ValueError as error:
 
         raise HTTPException(
@@ -249,6 +277,10 @@ def get_cache(
 
     if value is None:
 
+        idle_eviction.remove(
+            cache_key
+        )
+
         return {
             "status": "miss",
             "key": key,
@@ -256,6 +288,10 @@ def get_cache(
             "namespace": namespace,
             "value": None
         }
+
+    idle_eviction.track(
+        cache_key
+    )
 
     return {
         "status": "hit",
@@ -314,6 +350,10 @@ def delete_cache(
         cache_key
     )
 
+    idle_eviction.remove(
+        cache_key
+    )
+
     return {
         "status": "deleted",
         "key": key,
@@ -364,5 +404,57 @@ def cache_status(
         "tenant": tenant_id,
         "namespace": namespace,
         "cache_size": cache.size(),
-        "memory_bytes": cache.memory_bytes()
+        "idle_tracked_keys": len(
+            idle_eviction.entries
+        )
+    }
+
+
+@router.get("/admin/idle-status")
+def idle_status(
+    request: Request,
+    credentials: HTTPAuthorizationCredentials | None = Security(
+        bearer_scheme
+    ),
+    tenant_id: str | None = Header(
+        default=None,
+        alias="X-Tenant-ID"
+    ),
+    namespace: str | None = Header(
+        default=None,
+        alias="X-Namespace"
+    )
+):
+
+    client_id = request.client.host
+
+    if not rate_limiter.allow(
+        client_id
+    ):
+
+        raise HTTPException(
+            status_code=429,
+            detail="Rate limit exceeded"
+        )
+
+    require_token(
+        credentials,
+        "admin"
+    )
+
+    validate_namespace(
+        tenant_id,
+        namespace
+    )
+
+    return {
+        "idle_timeout_seconds": (
+            idle_eviction.idle_timeout
+        ),
+        "check_interval_seconds": (
+            idle_eviction.check_interval
+        ),
+        "entries": (
+            idle_eviction.get_status()
+        )
     }
