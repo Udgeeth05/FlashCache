@@ -1,43 +1,124 @@
+import time
+
 from cache.predictive_warmer import PredictiveWarmer
 
 
-predictor = PredictiveWarmer(
-    max_keys=3
-)
+def test_record_access():
+
+    warmer = PredictiveWarmer(
+        max_keys=3
+    )
+
+    warmer.record_access(
+        "key-1"
+    )
+
+    warmer.record_access(
+        "key-1"
+    )
+
+    warmer.record_access(
+        "key-2"
+    )
+
+    counts = warmer.get_access_counts()
+
+    assert counts["key-1"] == 2
+
+    assert counts["key-2"] == 1
 
 
-print("==============================")
-print("Predictive Warmer Test")
-print("==============================")
+def test_hot_keys():
+
+    warmer = PredictiveWarmer(
+        max_keys=2
+    )
+
+    for _ in range(5):
+
+        warmer.record_access(
+            "hot-key"
+        )
+
+    warmer.record_access(
+        "cold-key"
+    )
+
+    hot_keys = warmer.get_hot_keys()
+
+    assert "hot-key" in hot_keys
 
 
-# Simulate application traffic
+def test_max_keys():
 
-requests = [
-    "1",
-    "2",
-    "1",
-    "3",
-    "1",
-    "2",
-    "1",
-    "4",
-    "2",
-    "1"
-]
+    warmer = PredictiveWarmer(
+        max_keys=2
+    )
 
+    warmer.record_access("key-1")
+    warmer.record_access("key-2")
+    warmer.record_access("key-3")
 
-for key in requests:
-    predictor.record_access(key)
+    hot_keys = warmer.get_hot_keys()
+
+    assert len(hot_keys) == 2
 
 
-print("\nAccess counts:")
-print(predictor.get_access_counts())
+def test_time_decay():
+
+    warmer = PredictiveWarmer(
+        max_keys=2,
+        decay_rate=1.0
+    )
+
+    warmer.record_access(
+        "old-key"
+    )
+
+    time.sleep(0.2)
+
+    warmer.record_access(
+        "new-key"
+    )
+
+    scores = warmer.get_scores()
+
+    assert scores["new-key"] > scores["old-key"]
 
 
-print("\nPredicted hot keys:")
-print(predictor.get_hot_keys())
+def test_remove():
+
+    warmer = PredictiveWarmer()
+
+    warmer.record_access(
+        "key-1"
+    )
+
+    warmer.remove(
+        "key-1"
+    )
+
+    assert (
+        warmer.size()
+        == 0
+    )
 
 
-print("\nExpected hot-key order:")
-print("['1', '2', '3']")
+def test_clear():
+
+    warmer = PredictiveWarmer()
+
+    warmer.record_access(
+        "key-1"
+    )
+
+    warmer.record_access(
+        "key-2"
+    )
+
+    warmer.clear()
+
+    assert (
+        warmer.size()
+        == 0
+    )

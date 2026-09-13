@@ -86,6 +86,7 @@ class CacheEngine:
                 )
 
                 if key is None:
+
                     continue
 
                 key = str(key)
@@ -105,7 +106,9 @@ class CacheEngine:
                         )
 
                         self.entry_sizes[key] = (
-                            self._calculate_size(value)
+                            self._calculate_size(
+                                value
+                            )
                         )
 
                 elif operation == "DELETE":
@@ -123,7 +126,10 @@ class CacheEngine:
 
             self.recovering = False
 
-    def _calculate_size(self, value):
+    def _calculate_size(
+        self,
+        value
+    ):
 
         try:
 
@@ -140,7 +146,10 @@ class CacheEngine:
                 value
             )
 
-    def get(self, key):
+    def get(
+        self,
+        key
+    ):
 
         key = str(key)
 
@@ -158,7 +167,8 @@ class CacheEngine:
         self,
         key,
         value,
-        ttl=300
+        ttl=300,
+        fetch_time=0
     ):
 
         key = str(key)
@@ -182,11 +192,22 @@ class CacheEngine:
             payload
         )
 
-        self.cache.put(
-            key,
-            value,
-            ttl
-        )
+        if self.policy == "LRU":
+
+            self.cache.put(
+                key,
+                value,
+                ttl,
+                fetch_time
+            )
+
+        else:
+
+            self.cache.put(
+                key,
+                value,
+                ttl
+            )
 
         if (
             self.persistence is not None
@@ -200,7 +221,10 @@ class CacheEngine:
                 ttl=ttl
             )
 
-    def delete(self, key):
+    def delete(
+        self,
+        key
+    ):
 
         key = str(key)
 
@@ -238,7 +262,10 @@ class CacheEngine:
 
             for key, item in self.cache.store.items():
 
-                if isinstance(item, dict):
+                if isinstance(
+                    item,
+                    dict
+                ):
 
                     data[key] = item
 

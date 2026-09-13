@@ -1,10 +1,179 @@
-version: "3.8"
 services:
-  postgres:
-    image: postgres:16
-    environment:
-      POSTGRES_USER: flashcache
-      POSTGRES_PASSWORD: flashcache123
-      POSTGRES_DB: flashcache_db
+
+  flashcache:
+
+    build: .
+
+    container_name: flashcache-api
+
     ports:
+      - "8000:8000"
+
+    environment:
+
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+
+      FLASHCACHE_READ_TOKEN: ${FLASHCACHE_READ_TOKEN}
+
+      FLASHCACHE_WRITE_TOKEN: ${FLASHCACHE_WRITE_TOKEN}
+
+      FLASHCACHE_ADMIN_TOKEN: ${FLASHCACHE_ADMIN_TOKEN}
+
+      FLASHCACHE_HMAC_SECRET: ${FLASHCACHE_HMAC_SECRET}
+
+      FLASHCACHE_TRACING: ${FLASHCACHE_TRACING}
+
+      FLASHCACHE_NODE_URLS: http://flashcache-node-1:8001,http://flashcache-node-2:8002,http://flashcache-node-3:8003
+
+    depends_on:
+
+      postgres:
+        condition: service_healthy
+
+      flashcache-node-1:
+        condition: service_started
+
+      flashcache-node-2:
+        condition: service_started
+
+      flashcache-node-3:
+        condition: service_started
+
+    volumes:
+
+      - flashcache-data:/app/data
+
+    restart: unless-stopped
+
+
+  flashcache-node-1:
+
+    build: .
+
+    container_name: flashcache-node-1
+
+    command:
+      [
+        "uvicorn",
+        "node_server:app",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "8001"
+      ]
+
+    environment:
+
+      NODE_ID: node-1
+
+      CACHE_CAPACITY: 1000
+
+    expose:
+
+      - "8001"
+
+    restart: unless-stopped
+
+
+  flashcache-node-2:
+
+    build: .
+
+    container_name: flashcache-node-2
+
+    command:
+      [
+        "uvicorn",
+        "node_server:app",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "8002"
+      ]
+
+    environment:
+
+      NODE_ID: node-2
+
+      CACHE_CAPACITY: 1000
+
+    expose:
+
+      - "8002"
+
+    restart: unless-stopped
+
+
+  flashcache-node-3:
+
+    build: .
+
+    container_name: flashcache-node-3
+
+    command:
+      [
+        "uvicorn",
+        "node_server:app",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "8003"
+      ]
+
+    environment:
+
+      NODE_ID: node-3
+
+      CACHE_CAPACITY: 1000
+
+    expose:
+
+      - "8003"
+
+    restart: unless-stopped
+
+
+  postgres:
+
+    image: postgres:16
+
+    container_name: flashcache-postgres
+
+    environment:
+
+      POSTGRES_USER: ${POSTGRES_USER}
+
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+
+      POSTGRES_DB: ${POSTGRES_DB}
+
+    ports:
+
       - "5432:5432"
+
+    volumes:
+
+      - postgres-data:/var/lib/postgresql/data
+
+    healthcheck:
+
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"
+        ]
+
+      interval: 5s
+
+      timeout: 5s
+
+      retries: 10
+
+    restart: unless-stopped
+
+
+volumes:
+
+  postgres-data:
+
+  flashcache-data:

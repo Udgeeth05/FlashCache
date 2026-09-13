@@ -4,3 +4,29 @@
 {"operation": "DELETE", "key": "product:2", "value": null, "ttl": 300}
 {"operation": "PUT", "key": "product:1", "value": {"name": "iPhone 17", "price": 99999}, "ttl": 60}
 {"operation": "DELETE", "key": "product:2", "value": null, "ttl": 300}
+{"operation": "PUT", "key": "product:1", "value": {"name": "iPhone 17", "price": 99999}, "ttl": 60}
+{"operation": "DELETE", "key": "product:2", "value": null, "ttl": 300}
+{"operation": "PUT", "key": "product:1", "value": {"name": "iPhone 17", "price": 99999}, "ttl": 60}
+{"operation": "DELETE", "key": "product:2", "value": null, "ttl": 300}
+{"operation": "PUT", "key": "product:1", "value": {"name": "iPhone 17", "price": 99999}, "ttl": 60}
+{"operation": "DELETE", "key": "product:2", "value": null, "ttl": 300}
+{"operation": "PUT", "key": "product:1", "value": {"name": "iPhone 17", "price": 99999}, "ttl": 60}
+{"operation": "DELETE", "key": "product:2", "value": null, "ttl": 300}
+{"operation": "PUT", "key": "product:1", "value": {"name": "iPhone 17", "price": 99999}, "ttl": 60}
+{"operation": "DELETE", "key": "product:2", "value": null, "ttl": 300}
+{"operation": "PUT", "key": "product:1", "value": {"name": "iPhone 17", "price": 99999}, "ttl": 60}
+{"operation": "DELETE", "key": "product:2", "value": null, "ttl": 300}
+{"operation": "PUT", "key": "product:1", "value": {"name": "iPhone 17", "price": 99999}, "ttl": 60}
+{"operation": "DELETE", "key": "product:2", "value": null, "ttl": 300}
+{"operation": "PUT", "key": "product:1", "value": {"name": "iPhone 17", "price": 99999}, "ttl": 60}
+{"operation": "DELETE", "key": "product:2", "value": null, "ttl": 300}
+{"operation": "PUT", "key": "product:1", "value": {"name": "iPhone 17", "price": 99999}, "ttl": 60}
+{"operation": "DELETE", "key": "product:2", "value": null, "ttl": 300}
+{"operation": "PUT", "key": "product:1", "value": {"name": "iPhone 17", "price": 99999}, "ttl": 60}
+{"operation": "DELETE", "key": "product:2", "value": null, "ttl": 300}
+{"operation": "PUT", "key": "product:1", "value": {"name": "iPhone 17", "price": 99999}, "ttl": 60}
+{"operation": "DELETE", "key": "product:2", "value": null, "ttl": 300}
+{"operation": "PUT", "key": "product:1", "value": {"name": "iPhone 17", "price": 99999}, "ttl": 60}
+{"operation": "DELETE", "key": "product:2", "value": null, "ttl": 300}
+{"operation": "PUT", "key": "product:1", "value": {"name": "iPhone 17", "price": 99999}, "ttl": 60}
+{"operation": "DELETE", "key": "product:2", "value": null, "ttl": 300}

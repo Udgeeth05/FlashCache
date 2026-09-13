@@ -12,11 +12,16 @@ from cache.predictive_warmer import PredictiveWarmer
 from cache.security import SecurityManager
 from cache.rate_limiter import TokenBucket
 from cache.persistence import CachePersistence
+from cache.negative_cache import NegativeCache
+from cache.network_distributed_cache import (
+    NetworkDistributedCache
+)
 from cache.api import router as cache_router
+from cache.tracing import configure_tracing, tracer
 
 from database import SessionLocal
 from models import Product
-from metrics import CacheMetrics
+from metrics import metrics
 
 
 app = FastAPI(
@@ -30,6 +35,7 @@ persistence = CachePersistence(
 )
 
 
+# Local cache remains available as a fallback.
 cache = CacheEngine(
     capacity=100,
     policy="LRU",
@@ -37,24 +43,38 @@ cache = CacheEngine(
 )
 
 
-metrics = CacheMetrics()
+# Main product cache.
+# In Docker this automatically connects to:
+# node-1, node-2 and node-3.
+#
+# When running locally without node URLs,
+# it falls back to the local cache above.
+product_cache = NetworkDistributedCache.from_environment(
+    fallback_cache=cache
+)
+
 
 singleflight = SingleFlight()
+
 
 circuit_breaker = CircuitBreaker(
     failure_threshold=3,
     recovery_timeout=10
 )
 
+
 cache_warmer = CacheWarmer(
     cache
 )
+
 
 predictive_warmer = PredictiveWarmer(
     max_keys=10
 )
 
+
 security = SecurityManager()
+
 
 rate_limiter = TokenBucket(
     capacity=10,
@@ -62,8 +82,19 @@ rate_limiter = TokenBucket(
 )
 
 
+negative_cache = NegativeCache(
+    ttl=30,
+    capacity=10000
+)
+
+
 app.include_router(
     cache_router
+)
+
+
+configure_tracing(
+    app
 )
 
 
@@ -245,163 +276,241 @@ def get_product(
     )
 ):
 
-    check_rate_limit(
-        request
-    )
+    with tracer.start_as_current_span(
+        "flashcache.get_product"
+    ) as span:
 
-    require_scope(
-        authorization,
-        "read"
-    )
+        span.set_attribute(
+            "flashcache.product_id",
+            product_id
+        )
 
-    require_tenant(
-        tenant_id,
-        namespace
-    )
+        span.set_attribute(
+            "flashcache.tenant",
+            tenant_id or ""
+        )
 
-    require_hmac(
-        request,
-        tenant_id,
-        namespace,
-        signature
-    )
+        span.set_attribute(
+            "flashcache.namespace",
+            namespace or ""
+        )
 
-    start_time = time.perf_counter()
+        check_rate_limit(
+            request
+        )
 
-    key = build_cache_key(
-        tenant_id,
-        namespace,
-        str(product_id)
-    )
+        require_scope(
+            authorization,
+            "read"
+        )
 
-    predictive_warmer.record_access(
-        key
-    )
+        require_tenant(
+            tenant_id,
+            namespace
+        )
 
-    cached_product = cache.get(
-        key
-    )
+        require_hmac(
+            request,
+            tenant_id,
+            namespace,
+            signature
+        )
 
-    if cached_product is not None:
+        start_time = time.perf_counter()
+
+        key = build_cache_key(
+            tenant_id,
+            namespace,
+            str(product_id)
+        )
+
+        predictive_warmer.record_access(
+            key
+        )
+
+        if negative_cache.contains(
+            key
+        ):
+
+            span.set_attribute(
+                "flashcache.cache_result",
+                "negative_hit"
+            )
+
+            raise HTTPException(
+                status_code=404,
+                detail="Product not found"
+            )
+
+        with tracer.start_as_current_span(
+            "flashcache.distributed_cache_get"
+        ):
+
+            cached_product = product_cache.get(
+                key
+            )
+
+        if cached_product is not None:
+
+            span.set_attribute(
+                "flashcache.cache_result",
+                "hit"
+            )
+
+            span.set_attribute(
+                "flashcache.cache_node",
+                product_cache.get_node(key) or ""
+            )
+
+            latency = (
+                time.perf_counter()
+                - start_time
+            )
+
+            metrics.record_hit(
+                latency
+            )
+
+            metrics.update_cache_size(
+                product_cache.size()
+            )
+
+            metrics.update_memory_bytes(
+                product_cache.memory_bytes()
+            )
+
+            return {
+                "source": "cache",
+                "tenant": tenant_id,
+                "namespace": namespace,
+                "node": product_cache.get_node(
+                    key
+                ),
+                "data": cached_product
+            }
+
+        span.set_attribute(
+            "flashcache.cache_result",
+            "miss"
+        )
+
+        if not circuit_breaker.allow_request():
+
+            metrics.record_error()
+
+            raise HTTPException(
+                status_code=503,
+                detail="Database temporarily unavailable"
+            )
+
+        def load_from_database():
+
+            with tracer.start_as_current_span(
+                "flashcache.database_load"
+            ):
+
+                db = SessionLocal()
+
+                try:
+
+                    product = db.query(
+                        Product
+                    ).filter(
+                        Product.id == product_id
+                    ).first()
+
+                    if product is None:
+
+                        negative_cache.add(
+                            key
+                        )
+
+                        return None
+
+                    product_data = {
+                        "id": product.id,
+                        "name": product.name,
+                        "price": product.price,
+                        "category": product.category
+                    }
+
+                    negative_cache.remove(
+                        key
+                    )
+
+                    with tracer.start_as_current_span(
+                        "flashcache.distributed_cache_put"
+                    ):
+
+                        product_cache.put(
+                            key,
+                            product_data,
+                            ttl=60
+                        )
+
+                    return product_data
+
+                finally:
+
+                    db.close()
+
+        try:
+
+            with tracer.start_as_current_span(
+                "flashcache.singleflight"
+            ):
+
+                product_data = singleflight.do(
+                    key,
+                    load_from_database
+                )
+
+            circuit_breaker.record_success()
+
+        except Exception:
+
+            circuit_breaker.record_failure()
+
+            metrics.record_error()
+
+            raise HTTPException(
+                status_code=503,
+                detail="Database temporarily unavailable"
+            )
 
         latency = (
             time.perf_counter()
             - start_time
         )
 
-        metrics.record_hit(
+        metrics.record_miss(
             latency
         )
 
         metrics.update_cache_size(
-            cache.size()
+            product_cache.size()
         )
 
         metrics.update_memory_bytes(
-            cache.memory_bytes()
+            product_cache.memory_bytes()
         )
 
-        return {
-            "source": "cache",
-            "tenant": tenant_id,
-            "namespace": namespace,
-            "data": cached_product
-        }
+        if product_data is None:
 
-    if not circuit_breaker.allow_request():
-
-        metrics.record_error()
-
-        raise HTTPException(
-            status_code=503,
-            detail="Database temporarily unavailable"
-        )
-
-    def load_from_database():
-
-        db = SessionLocal()
-
-        try:
-
-            product = db.query(
-                Product
-            ).filter(
-                Product.id == product_id
-            ).first()
-
-            if product is None:
-
-                return None
-
-            product_data = {
-                "id": product.id,
-                "name": product.name,
-                "price": product.price,
-                "category": product.category
-            }
-
-            cache.put(
-                key,
-                product_data,
-                ttl=60
+            raise HTTPException(
+                status_code=404,
+                detail="Product not found"
             )
 
-            return product_data
-
-        finally:
-
-            db.close()
-
-    try:
-
-        product_data = singleflight.do(
-            key,
-            load_from_database
-        )
-
-        circuit_breaker.record_success()
-
-    except Exception:
-
-        circuit_breaker.record_failure()
-
-        metrics.record_error()
-
-        raise HTTPException(
-            status_code=503,
-            detail="Database temporarily unavailable"
-        )
-
-    latency = (
-        time.perf_counter()
-        - start_time
-    )
-
-    metrics.record_miss(
-        latency
-    )
-
-    metrics.update_cache_size(
-        cache.size()
-    )
-
-    metrics.update_memory_bytes(
-        cache.memory_bytes()
-    )
-
-    if product_data is None:
-
-        raise HTTPException(
-            status_code=404,
-            detail="Product not found"
-        )
-
-    return {
-        "source": "database",
-        "tenant": tenant_id,
-        "namespace": namespace,
-        "data": product_data
-    }
+        return {
+            "source": "database",
+            "tenant": tenant_id,
+            "namespace": namespace,
+            "node": product_cache.get_node(
+                key
+            ),
+            "data": product_data
+        }
 
 
 @app.post("/warm")
@@ -500,11 +609,11 @@ def warm_cache(
         circuit_breaker.record_success()
 
         metrics.update_cache_size(
-            cache.size()
+            product_cache.size()
         )
 
         metrics.update_memory_bytes(
-            cache.memory_bytes()
+            product_cache.memory_bytes()
         )
 
         return {
@@ -573,6 +682,9 @@ def get_predictions(
         ),
         "access_counts": (
             predictive_warmer.get_access_counts()
+        ),
+        "scores": (
+            predictive_warmer.get_scores()
         )
     }
 
@@ -619,14 +731,22 @@ def get_stats(
     )
 
     metrics.update_cache_size(
-        cache.size()
+        product_cache.size()
     )
 
     metrics.update_memory_bytes(
-        cache.memory_bytes()
+        product_cache.memory_bytes()
     )
 
-    return metrics.get_stats()
+    return {
+        **metrics.get_stats(),
+        "distributed_nodes": (
+            product_cache.get_nodes()
+        ),
+        "healthy_nodes": (
+            product_cache.get_healthy_nodes()
+        )
+    }
 
 
 @app.get("/metrics")

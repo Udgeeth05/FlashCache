@@ -2,3 +2,47 @@
 {"operation": "PUT", "key": "demo:demo:user-100", "value": {"name": "FlashCache User", "role": "developer"}, "ttl": 300}
 {"operation": "DELETE", "key": "demo:demo:user-100", "value": null, "ttl": 300}
 {"operation": "DELETE", "key": "demo:demo:user-100", "value": null, "ttl": 300}
+{"operation": "PUT", "key": "demo:persistence:persist-test", "value": {"message": "FlashCache survived restart", "version": 1}, "ttl": 300}
+{"operation": "DELETE", "key": "demo:persistence:persist-test", "value": null, "ttl": 300}
+{"operation": "PUT", "key": "tenant-a:products:1", "value": {"id": 1, "name": "iPhone 17", "price": 99999, "category": "Mobile"}, "ttl": 60}
+{"operation": "PUT", "key": "tenant-b:products:1", "value": {"id": 1, "name": "iPhone 17", "price": 99999, "category": "Mobile"}, "ttl": 60}
+{"operation": "PUT", "key": "tenant-a:products:1", "value": {"id": 1, "name": "iPhone 17", "price": 99999, "category": "Mobile"}, "ttl": 60}
+{"operation": "PUT", "key": "tenant-b:products:1", "value": {"id": 1, "name": "iPhone 17", "price": 99999, "category": "Mobile"}, "ttl": 60}
+{"operation": "PUT", "key": "test-tenant:pytest:pytest-full-api", "value": {"name": "FlashCache", "test": true}, "ttl": 300}
+{"operation": "DELETE", "key": "test-tenant:pytest:pytest-full-api", "value": null, "ttl": 300}
+{"operation": "PUT", "key": "tenant-a:products:1", "value": {"id": 1, "name": "iPhone 17", "price": 99999, "category": "Mobile"}, "ttl": 60}
+{"operation": "PUT", "key": "tenant-b:products:1", "value": {"id": 1, "name": "iPhone 17", "price": 99999, "category": "Mobile"}, "ttl": 60}
+{"operation": "PUT", "key": "test-tenant:pytest:pytest-full-api", "value": {"name": "FlashCache", "test": true}, "ttl": 300}
+{"operation": "DELETE", "key": "test-tenant:pytest:pytest-full-api", "value": null, "ttl": 300}
+{"operation": "PUT", "key": "test-tenant:pytest:1", "value": {"id": 1, "name": "iPhone 17", "price": 99999, "category": "Mobile"}, "ttl": 60}
+{"operation": "PUT", "key": "tenant-a:products:1", "value": {"id": 1, "name": "iPhone 17", "price": 99999, "category": "Mobile"}, "ttl": 60}
+{"operation": "PUT", "key": "test-tenant:pytest:1", "value": {"id": 1, "name": "iPhone 17", "price": 99999, "category": "Mobile"}, "ttl": 60}
+{"operation": "PUT", "key": "tenant-a:products:1", "value": {"id": 1, "name": "iPhone 17", "price": 99999, "category": "Mobile"}, "ttl": 60}
+{"operation": "PUT", "key": "test-tenant:pytest:1", "value": {"id": 1, "name": "iPhone 17", "price": 99999, "category": "Mobile"}, "ttl": 60}
+{"operation": "PUT", "key": "test-tenant:pytest:pytest-full-api", "value": {"name": "FlashCache", "test": true}, "ttl": 300}
+{"operation": "DELETE", "key": "test-tenant:pytest:pytest-full-api", "value": null, "ttl": 300}
+{"operation": "PUT", "key": "tenant-a:products:1", "value": {"id": 1, "name": "iPhone 17", "price": 99999, "category": "Mobile"}, "ttl": 60}
+{"operation": "PUT", "key": "tenant-b:products:1", "value": {"id": 1, "name": "iPhone 17", "price": 99999, "category": "Mobile"}, "ttl": 60}
+{"operation": "PUT", "key": "test-tenant:pytest:pytest-full-api", "value": {"name": "FlashCache", "test": true}, "ttl": 300}
+{"operation": "DELETE", "key": "test-tenant:pytest:pytest-full-api", "value": null, "ttl": 300}
+{"operation": "PUT", "key": "test-tenant:pytest:1", "value": {"id": 1, "name": "iPhone 17", "price": 99999, "category": "Mobile"}, "ttl": 60}
+{"operation": "PUT", "key": "test-tenant:pytest:pytest-full-api", "value": {"name": "FlashCache", "test": true}, "ttl": 300}
+{"operation": "DELETE", "key": "test-tenant:pytest:pytest-full-api", "value": null, "ttl": 300}
+{"operation": "PUT", "key": "tenant-a:products:1", "value": {"id": 1, "name": "iPhone 17", "price": 99999, "category": "Mobile"}, "ttl": 60}
+{"operation": "PUT", "key": "test-tenant:pytest:1", "value": {"id": 1, "name": "iPhone 17", "price": 99999, "category": "Mobile"}, "ttl": 60}
+{"operation": "PUT", "key": "test-tenant:pytest:pytest-full-api", "value": {"name": "FlashCache", "test": true}, "ttl": 300}
+{"operation": "DELETE", "key": "test-tenant:pytest:pytest-full-api", "value": null, "ttl": 300}
+{"operation": "PUT", "key": "tenant-b:products:1", "value": {"id": 1, "name": "iPhone 17", "price": 99999, "category": "Mobile"}, "ttl": 60}
+{"operation": "PUT", "key": "test-tenant:pytest:1", "value": {"id": 1, "name": "iPhone 17", "price": 99999, "category": "Mobile"}, "ttl": 60}
+{"operation": "PUT", "key": "test-tenant:pytest:pytest-full-api", "value": {"name": "FlashCache", "test": true}, "ttl": 300}
+{"operation": "DELETE", "key": "test-tenant:pytest:pytest-full-api", "value": null, "ttl": 300}
+{"operation": "PUT", "key": "tenant-a:products:1", "value": {"id": 1, "name": "iPhone 17", "price": 99999, "category": "Mobile"}, "ttl": 60}
+{"operation": "PUT", "key": "tenant-b:products:1", "value": {"id": 1, "name": "iPhone 17", "price": 99999, "category": "Mobile"}, "ttl": 60}
+{"operation": "PUT", "key": "test-tenant:pytest:1", "value": {"id": 1, "name": "iPhone 17", "price": 99999, "category": "Mobile"}, "ttl": 60}
+{"operation": "PUT", "key": "test-tenant:pytest:pytest-full-api", "value": {"name": "FlashCache", "test": true}, "ttl": 300}
+{"operation": "DELETE", "key": "test-tenant:pytest:pytest-full-api", "value": null, "ttl": 300}
+{"operation": "PUT", "key": "tenant-a:products:1", "value": {"id": 1, "name": "iPhone 17", "price": 99999, "category": "Mobile"}, "ttl": 60}
+{"operation": "PUT", "key": "tenant-b:products:1", "value": {"id": 1, "name": "iPhone 17", "price": 99999, "category": "Mobile"}, "ttl": 60}
+{"operation": "PUT", "key": "test-tenant:pytest:1", "value": {"id": 1, "name": "iPhone 17", "price": 99999, "category": "Mobile"}, "ttl": 60}
+{"operation": "PUT", "key": "test-tenant:pytest:pytest-full-api", "value": {"name": "FlashCache", "test": true}, "ttl": 300}
+{"operation": "DELETE", "key": "test-tenant:pytest:pytest-full-api", "value": null, "ttl": 300}

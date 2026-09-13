@@ -1,3 +1,5 @@
+import time
+
 from fastapi import (
     APIRouter,
     Header,
@@ -18,6 +20,8 @@ from cache.persistence import CachePersistence
 from cache.security import SecurityManager
 from cache.rate_limiter import TokenBucket
 from cache.idle_eviction import IdleEvictionManager
+from cache.negative_cache import NegativeCache
+from metrics import metrics
 
 
 router = APIRouter(
@@ -44,6 +48,12 @@ security = SecurityManager()
 rate_limiter = TokenBucket(
     capacity=20,
     refill_rate=10
+)
+
+
+negative_cache = NegativeCache(
+    ttl=30,
+    capacity=10000
 )
 
 
@@ -154,6 +164,17 @@ def build_key(
     )
 
 
+def update_metrics():
+
+    metrics.update_cache_size(
+        cache.size()
+    )
+
+    metrics.update_memory_bytes(
+        cache.memory_bytes()
+    )
+
+
 @router.put("/{key}")
 def put_cache(
     key: str,
@@ -172,34 +193,38 @@ def put_cache(
     )
 ):
 
-    client_id = request.client.host
-
-    if not rate_limiter.allow(
-        client_id
-    ):
-
-        raise HTTPException(
-            status_code=429,
-            detail="Rate limit exceeded"
-        )
-
-    require_token(
-        credentials,
-        "write"
-    )
-
-    validate_namespace(
-        tenant_id,
-        namespace
-    )
-
-    cache_key = build_key(
-        tenant_id,
-        namespace,
-        key
-    )
+    start_time = time.perf_counter()
 
     try:
+
+        client_id = request.client.host
+
+        if not rate_limiter.allow(
+            client_id
+        ):
+
+            metrics.record_error()
+
+            raise HTTPException(
+                status_code=429,
+                detail="Rate limit exceeded"
+            )
+
+        require_token(
+            credentials,
+            "write"
+        )
+
+        validate_namespace(
+            tenant_id,
+            namespace
+        )
+
+        cache_key = build_key(
+            tenant_id,
+            namespace,
+            key
+        )
 
         cache.put(
             cache_key,
@@ -207,24 +232,56 @@ def put_cache(
             ttl=payload.ttl
         )
 
+        negative_cache.remove(
+            cache_key
+        )
+
         idle_eviction.track(
             cache_key
         )
 
+        return {
+            "status": "stored",
+            "key": key,
+            "tenant": tenant_id,
+            "namespace": namespace,
+            "ttl": payload.ttl
+        }
+
+    except HTTPException:
+
+        raise
+
     except ValueError as error:
+
+        metrics.record_error()
 
         raise HTTPException(
             status_code=413,
             detail=str(error)
         )
 
-    return {
-        "status": "stored",
-        "key": key,
-        "tenant": tenant_id,
-        "namespace": namespace,
-        "ttl": payload.ttl
-    }
+    except Exception:
+
+        metrics.record_error()
+
+        raise HTTPException(
+            status_code=500,
+            detail="Cache storage error"
+        )
+
+    finally:
+
+        latency = (
+            time.perf_counter()
+            - start_time
+        )
+
+        metrics.record_request(
+            latency
+        )
+
+        update_metrics()
 
 
 @router.get("/{key}")
@@ -244,62 +301,123 @@ def get_cache(
     )
 ):
 
-    client_id = request.client.host
+    start_time = time.perf_counter()
 
-    if not rate_limiter.allow(
-        client_id
-    ):
+    try:
 
-        raise HTTPException(
-            status_code=429,
-            detail="Rate limit exceeded"
+        client_id = request.client.host
+
+        if not rate_limiter.allow(
+            client_id
+        ):
+
+            metrics.record_error()
+
+            raise HTTPException(
+                status_code=429,
+                detail="Rate limit exceeded"
+            )
+
+        require_token(
+            credentials,
+            "read"
         )
 
-    require_token(
-        credentials,
-        "read"
-    )
+        validate_namespace(
+            tenant_id,
+            namespace
+        )
 
-    validate_namespace(
-        tenant_id,
-        namespace
-    )
+        cache_key = build_key(
+            tenant_id,
+            namespace,
+            key
+        )
 
-    cache_key = build_key(
-        tenant_id,
-        namespace,
-        key
-    )
+        if negative_cache.contains(
+            cache_key
+        ):
 
-    value = cache.get(
-        cache_key
-    )
+            latency = (
+                time.perf_counter()
+                - start_time
+            )
 
-    if value is None:
+            metrics.record_miss(
+                latency
+            )
 
-        idle_eviction.remove(
+            return {
+                "status": "negative-cache-miss",
+                "key": key,
+                "tenant": tenant_id,
+                "namespace": namespace,
+                "value": None
+            }
+
+        value = cache.get(
+            cache_key
+        )
+
+        latency = (
+            time.perf_counter()
+            - start_time
+        )
+
+        if value is None:
+
+            metrics.record_miss(
+                latency
+            )
+
+            negative_cache.add(
+                cache_key
+            )
+
+            idle_eviction.remove(
+                cache_key
+            )
+
+            return {
+                "status": "miss",
+                "key": key,
+                "tenant": tenant_id,
+                "namespace": namespace,
+                "value": None
+            }
+
+        metrics.record_hit(
+            latency
+        )
+
+        idle_eviction.track(
             cache_key
         )
 
         return {
-            "status": "miss",
+            "status": "hit",
             "key": key,
             "tenant": tenant_id,
             "namespace": namespace,
-            "value": None
+            "value": value
         }
 
-    idle_eviction.track(
-        cache_key
-    )
+    except HTTPException:
 
-    return {
-        "status": "hit",
-        "key": key,
-        "tenant": tenant_id,
-        "namespace": namespace,
-        "value": value
-    }
+        raise
+
+    except Exception:
+
+        metrics.record_error()
+
+        raise HTTPException(
+            status_code=500,
+            detail="Cache retrieval error"
+        )
+
+    finally:
+
+        update_metrics()
 
 
 @router.delete("/{key}")
@@ -319,47 +437,83 @@ def delete_cache(
     )
 ):
 
-    client_id = request.client.host
+    start_time = time.perf_counter()
 
-    if not rate_limiter.allow(
-        client_id
-    ):
+    try:
 
-        raise HTTPException(
-            status_code=429,
-            detail="Rate limit exceeded"
+        client_id = request.client.host
+
+        if not rate_limiter.allow(
+            client_id
+        ):
+
+            metrics.record_error()
+
+            raise HTTPException(
+                status_code=429,
+                detail="Rate limit exceeded"
+            )
+
+        require_token(
+            credentials,
+            "write"
         )
 
-    require_token(
-        credentials,
-        "write"
-    )
+        validate_namespace(
+            tenant_id,
+            namespace
+        )
 
-    validate_namespace(
-        tenant_id,
-        namespace
-    )
+        cache_key = build_key(
+            tenant_id,
+            namespace,
+            key
+        )
 
-    cache_key = build_key(
-        tenant_id,
-        namespace,
-        key
-    )
+        cache.delete(
+            cache_key
+        )
 
-    cache.delete(
-        cache_key
-    )
+        negative_cache.remove(
+            cache_key
+        )
 
-    idle_eviction.remove(
-        cache_key
-    )
+        idle_eviction.remove(
+            cache_key
+        )
 
-    return {
-        "status": "deleted",
-        "key": key,
-        "tenant": tenant_id,
-        "namespace": namespace
-    }
+        return {
+            "status": "deleted",
+            "key": key,
+            "tenant": tenant_id,
+            "namespace": namespace
+        }
+
+    except HTTPException:
+
+        raise
+
+    except Exception:
+
+        metrics.record_error()
+
+        raise HTTPException(
+            status_code=500,
+            detail="Cache deletion error"
+        )
+
+    finally:
+
+        latency = (
+            time.perf_counter()
+            - start_time
+        )
+
+        metrics.record_request(
+            latency
+        )
+
+        update_metrics()
 
 
 @router.get("/")
@@ -384,6 +538,8 @@ def cache_status(
         client_id
     ):
 
+        metrics.record_error()
+
         raise HTTPException(
             status_code=429,
             detail="Rate limit exceeded"
@@ -399,11 +555,15 @@ def cache_status(
         namespace
     )
 
+    update_metrics()
+
     return {
         "status": "healthy",
         "tenant": tenant_id,
         "namespace": namespace,
         "cache_size": cache.size(),
+        "memory_bytes": cache.memory_bytes(),
+        "negative_cache_size": negative_cache.size(),
         "idle_tracked_keys": len(
             idle_eviction.entries
         )
@@ -432,6 +592,8 @@ def idle_status(
         client_id
     ):
 
+        metrics.record_error()
+
         raise HTTPException(
             status_code=429,
             detail="Rate limit exceeded"
@@ -456,5 +618,57 @@ def idle_status(
         ),
         "entries": (
             idle_eviction.get_status()
+        )
+    }
+
+
+@router.get("/admin/negative-cache-status")
+def negative_cache_status(
+    request: Request,
+    credentials: HTTPAuthorizationCredentials | None = Security(
+        bearer_scheme
+    ),
+    tenant_id: str | None = Header(
+        default=None,
+        alias="X-Tenant-ID"
+    ),
+    namespace: str | None = Header(
+        default=None,
+        alias="X-Namespace"
+    )
+):
+
+    client_id = request.client.host
+
+    if not rate_limiter.allow(
+        client_id
+    ):
+
+        metrics.record_error()
+
+        raise HTTPException(
+            status_code=429,
+            detail="Rate limit exceeded"
+        )
+
+    require_token(
+        credentials,
+        "admin"
+    )
+
+    validate_namespace(
+        tenant_id,
+        namespace
+    )
+
+    return {
+        "negative_cache_ttl_seconds": (
+            negative_cache.ttl
+        ),
+        "capacity": (
+            negative_cache.capacity
+        ),
+        "entries": (
+            negative_cache.size()
         )
     }
