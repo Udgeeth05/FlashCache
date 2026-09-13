@@ -1,0 +1,4 @@
+{"operation": "PUT", "key": "demo:demo:user-100", "value": {"name": "FlashCache User", "role": "developer"}, "ttl": 300}
+{"operation": "PUT", "key": "demo:demo:user-100", "value": {"name": "FlashCache User", "role": "developer"}, "ttl": 300}
+{"operation": "DELETE", "key": "demo:demo:user-100", "value": null, "ttl": 300}
+{"operation": "DELETE", "key": "demo:demo:user-100", "value": null, "ttl": 300}

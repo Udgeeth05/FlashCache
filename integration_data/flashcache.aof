@@ -1,0 +1,2 @@
+{"operation": "PUT", "key": "product:1", "value": {"name": "iPhone 17", "price": 99999}, "ttl": 60}
+{"operation": "PUT", "key": "product:2", "value": {"name": "Galaxy S25", "price": 89999}, "ttl": 60}
